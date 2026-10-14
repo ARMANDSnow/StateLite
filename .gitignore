@@ -1,0 +1,19 @@
+.build/
+*.app/
+*.zip
+*.csv
+*-snapshot*.json
+verified-snapshot*.json
+measurement-summary.json
+memory-validation.json
+
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+# Local-only analysis, fixtures and acceptance logs must not be published.
+Design/
+verification-*.txt
+temperature-comparison.txt
+ifan-uninstall-check.txt
+change-counts-*.json

@@ -1,0 +1,40 @@
+StateLite temperature measurement: implementation and sources
+
+StateLite implements a read-only temperature sampler using IOKit/HID discovery
+and AppleSMC fallback. Its API declarations, SMC wire layout/read operations and
+empirical CPU sensor mappings were cross-checked against the Stats project:
+
+https://github.com/exelban/stats/blob/master/Modules/Sensors/bridge.h
+https://github.com/exelban/stats/blob/master/Modules/Sensors/readers.swift
+https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift
+https://github.com/exelban/stats/blob/master/SMC/smc.swift
+
+Stats copyright and its complete MIT notice are retained in
+../THIRD_PARTY_NOTICES.md. That notice applies to the corresponding third-party
+material, not to StateLite's own code. These upstream branch links can change.
+
+Measurement contract
+The M4 Pro fallback uses only Te05 and Te0S, identified by the upstream community
+mapping as efficiency-core temperature channels. The displayed value is the mean
+of usable readings from those channels. It is not an all-core average, CPU hotspot
+temperature, or independently calibrated absolute measurement. An absent reading
+is unavailable, not zero. Unrelated PMU sensors and additional Tp* keys are not
+substituted merely because they return plausible numbers.
+
+The sampler checks finite readings against its accepted 10..125 Celsius range.
+HID connections and SMC metadata are cached, with failed discovery/read recovery
+scheduled no sooner than 60 seconds. The app resets discovery after wake and
+controls sample frequency from one serial sampling queue. The temperature path
+uses no administrator authorization, subprocess or fan-control write.
+
+The C bridge checks the 80-byte SMC ABI and field offsets at compile time. Reads
+use selector 2, operation 9 for metadata and operation 5 for value bytes. Private
+IOKit and AppleSMC behavior can change with hardware or macOS updates.
+
+Verification boundary
+Read-only M4 Pro sampling established that the selected SMC channels can return
+finite readings and that unavailable HID CPU channels do not cause a different
+sensor family to be presented as CPU temperature. No external reference instrument
+was used. Readability, plausible values and agreement with another application do
+not independently establish sensor identity or absolute accuracy. Other hardware
+families require separate measurement and validation.

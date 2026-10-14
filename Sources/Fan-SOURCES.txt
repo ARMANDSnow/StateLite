@@ -1,0 +1,76 @@
+StateLite fan control: implementation and sources
+
+Scope
+StateLite implements its own fixed-purpose fan helper. It does not bundle or call
+another fan-control application's helper. AppleSMC is a private interface; the
+community observations below are not an Apple compatibility guarantee.
+
+Public implementation references
+- Stats: AppleSMC message layout, fan keys and Apple Silicon unlock sequence.
+  https://github.com/exelban/stats/blob/88d5359ad3466efaa16985646a0bb15c6599109f/SMC/smc.swift
+- fan-dial: M4 Pro-oriented manual-mode/target ordering and transient-write retries.
+  https://github.com/whybepb/fan-dial/blob/f1bf99ef79ade7e5e7d22d57e75b4ad620f40a88/shared/SMCCore.swift
+- MacFanControl: explicit desired state, manual engagement and system release.
+  https://github.com/raminsharifi/MacFanControl/blob/main/src/control.rs
+- fanpro: community SMC key and control reference.
+  https://github.com/omar16100/fanpro/blob/main/docs/smc_reference.md
+
+Third-party copyright and MIT notices are retained in ../THIRD_PARTY_NOTICES.md.
+Those notices apply to the corresponding third-party material; they do not grant
+a license for StateLite's own code. References using main may change upstream.
+
+Current control behavior
+The app reads fan metadata without administrator rights. A requested custom speed
+uses a separately authorized, root-owned helper installed at fixed system paths.
+The on-demand service validates the connecting user's kernel audit token, running
+code signature and pinned code-directory hash. Application and helper signatures
+require hardened runtime without the supported injection/debugging exceptions.
+An update that changes the approved code identity requires authorization again.
+
+The protocol accepts only bounded SET, SYSTEM and PING messages. SET includes the
+complete fan-ID set; the helper independently checks finite targets against each
+fan's reported minimum and maximum. It does not accept arbitrary commands, file
+paths or arbitrary SMC keys. One lease owns fan control at a time.
+
+After unlocking when required, the helper writes manual mode before the target.
+It retries only transient SMC result 0x82 when the transport succeeded. Mode and
+target attempts, observation and bounded replay share a 16-second handoff budget.
+All fan modes and targets must match in two consecutive observations before ACK.
+ACK confirms those readbacks; actual mechanical RPM can take longer to converge.
+
+PING renews a 10-second lease, including during a pending handoff. An ACK is not a
+heartbeat. SYSTEM, EOF, lease expiry, parent-process loss, handled termination
+signals and sleep trigger restoration attempts. Restoration requests automatic
+mode and releases Ftst, allowing bounded time for consistent system-ownership
+readbacks. It never clears target RPM while ownership could still be manual.
+
+A recovery marker is created before a control session and removed only after
+confirmed restoration. A later service startup with a marker attempts recovery
+before accepting control. Idle helpers exit; there is no idle hardware polling or
+control heartbeat. The GUI does not automatically reacquire manual mode on wake.
+
+Platform API references
+- launchd socket activation and launch daemon lifecycle:
+  https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html
+- Running-code identification using Security framework guest attributes:
+  https://developer.apple.com/documentation/security/seccodecopyguestwithattributes(_:_:_:_:)
+- Sleep notification and acknowledgement: IOKit IOPMLib.h,
+  IORegisterForSystemPower and IOAllowPowerChange in the Apple SDK.
+- Socket peer identity: LOCAL_PEERTOKEN in the Apple SDK sys/un.h.
+
+Verification and limitations
+The 0.4.3 acceptance recorded short 3500-RPM operation of both fans on an M4 Pro,
+actual RPM convergence, successful return to system control, and reuse from a new
+app process without another authorization prompt for the same installed build.
+Mock tests cover rejected writes, delayed readbacks, shared time budgets, malformed
+requests, stale acknowledgements, lost leases, and recovery success/failure.
+Socket tests exercise actual audit-token/signature validation without SMC writes.
+These scopes are distinct; mocked recovery is not real-device recovery evidence.
+
+Cross-reboot reuse, extended operation, actual sleep/crash recovery, uninstall and
+other Mac models have not been established by that acceptance. Synchronous IOKit
+calls, process termination and power loss prevent a guaranteed recovery deadline.
+Ad-hoc signing is not Apple notarization or a publisher identity. Installation,
+upgrade and removal currently use deprecated AuthorizationExecuteWithPrivileges;
+that initial installation mechanism is not claimed to resist every same-user
+malicious modification. Fixed RPM is not a replacement for system thermal policy.

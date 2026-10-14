@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    # GitHub's standard macos-15 runner is Apple Silicon; fail if that changes.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require Apple Silicon
+        run: test "$(uname -m)" = arm64
+      - name: Mock and metadata tests (no SMC or installation)
+        run: |
+          bash test.sh
+      - name: Build and validate isolated ad-hoc artifact
+        env:
+          RELEASE_OUTPUT_DIR: ${{ runner.temp }}/statelite-dist
+        run: bash build.sh
